@@ -6,6 +6,18 @@ Evolución de Mini-Azure LUIS hacia la nube, desarrollado para emular la funcion
 
 ---
 
+### 🌐 Servicio Activo en Producción (Cloud PaaS - Render Free)
+
+- **URL Pública Oficial (HTTPS):** [https://mini-azure-luis-v2-kbos.onrender.com](https://mini-azure-luis-v2-kbos.onrender.com)
+- **Credenciales de Acceso para Evaluación:**
+
+| Rol / Perfil | Usuario | Contraseña | Alcance de Permisos |
+| :--- | :--- | :--- | :--- |
+| **OPERADOR** | `operador_ica` | `operador_pass_2026` | Acceso exclusivo a reportes operativos de campo (`/nlp/entender-comando`). Bloqueado en KPIs (`403 Forbidden`). |
+| **SUPERVISOR** | `supervisor_ica` | `supervisor_pass_2026` | Acceso completo a Dashboard analítico, 4 KPIs, gráficos, bitácora y reinicio de métricas (`403 Forbidden` bypass). |
+
+---
+
 ## 🏛️ Arquitectura del Sistema
 
 El proyecto está diseñado bajo una arquitectura de microservicios desacoplados con soporte para despliegue local y en plataformas PaaS de nube gratuita:
@@ -24,7 +36,8 @@ mini-azure-luis/
 ├── docs/
 │   ├── ficha_tecnica.md        # Entregable v1: Topología LAN, evidencias y cuadro comparativo
 │   ├── persistencia_efimera.md # Resiliencia de almacenamiento en cold starts de nubes gratuitas
-│   └── arquitectura_cloud_seguridad.md # Evaluación cloud (Grok) y diseño RBAC con JWT
+│   ├── arquitectura_cloud_seguridad.md # Evaluación cloud (Grok), evidencias de acceso y puerto $PORT
+│   └── analisis_tecnico_comparativo.md # Análisis técnico: Nube vs LAN, mitigación JWT y entorno efímero
 ├── server/                     # [Servicio Backend] Motor NLP + API REST FastAPI (Puerto 8001)
 │   ├── Dockerfile              # Imagen Python 3.11-slim optimizada
 │   ├── requirements.txt        # Dependencias: FastAPI, Uvicorn, Scikit-Learn, Pandas, PyJWT
@@ -49,7 +62,8 @@ mini-azure-luis/
 │       └── dashboard.py        # Interfaz web con Login Gate y vistas diferenciadas por rol
 └── tests/
     ├── test_auth_rbac.py       # Pruebas unitarias y de integración de seguridad (401, 403, 200)
-    └── test_monolith.py        # Validación de enrutamiento monolítico en puerto único ($PORT)
+    ├── test_monolith.py        # Validación de enrutamiento monolítico en puerto único ($PORT)
+    └── test_production_render.py # Suite de verificación en vivo sobre la nube Render HTTPS
 ```
 
 ---
@@ -84,36 +98,45 @@ En caso afirmativo, la intención y el sentimiento se mapean automáticamente a 
 
 ---
 
-## 🌐 Endpoints de la API REST (FastAPI - Puerto 8001)
+## 🌐 Endpoints de la API REST (FastAPI + Seguridad JWT y RBAC)
 
-| Método | Endpoint | Descripción |
-| :--- | :--- | :--- |
-| `GET` | `/health` o `/` | Healthcheck del servicio, versión del motor y umbral de confianza activo. |
-| `POST` | `/nlp/analizar-texto` | Clasifica sentimiento, confianza y extrae las 4 palabras clave TF-IDF principales. |
-| `POST` | `/nlp/entender-comando` | Clasifica intención, sentimiento, entidades, acción sugerida y persiste en bitácora. |
-| `GET` | `/nlp/estadisticas` | Retorna los KPIs acumulados: total, por intención, por sentimiento, confianza promedio, tasa de derivación, ranking de entidades y últimos 15 mensajes. |
-| `POST` | `/nlp/estadisticas/reiniciar` | Limpia el archivo de persistencia `historial.json` y restablece los KPIs a cero. |
+Todos los endpoints `/nlp/*` requieren el encabezado `Authorization: Bearer <token>` emitido por `/auth/login`.
+
+| Método | Endpoint | Rol Requerido | Descripción | Código HTTP |
+| :--- | :--- | :---: | :--- | :--- |
+| `GET` | `/health` o `/` | **Público** | Healthcheck del servicio, versión del motor y umbral de confianza activo. | `200 OK` |
+| `POST` | `/auth/login` | **Público** | Valida credenciales y emite el token JWT (`sub`, `role`, `exp`). | `200 OK` / `401 Unauthorized` |
+| `POST` | `/nlp/analizar-texto` | `OPERADOR` o `SUPERVISOR` | Clasifica sentimiento, confianza y extrae las 4 palabras clave TF-IDF principales. | `200 OK` / `401` |
+| `POST` | `/nlp/entender-comando` | `OPERADOR` o `SUPERVISOR` | Inferencia completa de comando agroexportador, entidades y persistencia. | `200 OK` / `401` |
+| `GET` | `/nlp/estadisticas` | **`SUPERVISOR`** | Retorna KPIs, rankings y bitácora. **Bloqueado con 403 para OPERADOR**. | `200 OK` / `403 Forbidden` / `401` |
+| `POST` | `/nlp/estadisticas/reiniciar` | **`SUPERVISOR`** | Limpia el archivo `historial.json`. **Bloqueado con 403 para OPERADOR**. | `200 OK` / `403 Forbidden` / `401` |
 
 ---
 
-## 🖥️ Cliente y Dashboard Streamlit (Puerto 8501)
+## 🖥️ Cliente y Dashboard Streamlit con Control de Acceso (RBAC)
 
-La interfaz web implementa una separación estricta de responsabilidades según el dispositivo:
+La interfaz web implementa un flujo de seguridad estricto y vistas adaptadas al rol:
 
-1. **Terminal Operativa Móvil (Celulares Android / iOS en Campo):**
-   - **Detección Automática:** Inspecciona la cabecera `User-Agent`.
-   - **Ocultamiento Total de Sidebar:** Suprime la barra lateral y su botón de despliegue (`>>`).
-   - **Cero KPIs ni Métricas:** No muestra ningún indicador analítico, gráfico ni bitácora global.
-   - **Respuesta Pura del Modelo:** El operario ingresa su reporte y recibe directamente el objeto JSON de inferencia devuelto por `POST /nlp/entender-comando` (`texto_original`, `intencion`, `confianza_intencion`, `sentimiento`, `entidades` y `accion_sugerida`).
+1. **Pantalla de Inicio de Sesión (`Login Gate`):**
+   - Si no existe un token JWT válido en memoria, se bloquea el acceso total a cualquier panel.
+   - Formulario que consume `POST /auth/login` y almacena `access_token`, `username` y `role` en `st.session_state`.
+   - Si el token expira o es inválido, el helper de peticiones intercepta el error `401` y redirige al login.
 
-2. **Estación Central de Monitoreo (Dashboard Ligero en PC):**
-   - **Control de Red LAN:** Configuración de IP/puerto y verificación con `/health`.
-   - **Panel Analítico en Vivo (`GET /nlp/estadisticas`):**
-     - 4 KPIs: Total Mensajes Procesados, Confianza Promedio, Tasa de Derivación y Alertas Críticas (diseño Dark Mode de alto contraste).
-     - 2 Gráficos de barras interactivos (Distribución por Intención y Sentimiento).
-     - Ranking de Entidades y Áreas más reportadas.
-     - Bitácora dinámica de los últimos 15 eventos registrados.
-     - **Auto-actualización cada 3s:** Para observar en la pantalla central cómo se actualizan las métricas en tiempo real a medida que los operarios envían reportes desde el campo.
+2. **Vista de OPERADOR (`operador_ica`):**
+   - **Terminal Operativa de Campo:** Selector de sugerencias rápidas (calidad, avería, stock, despacho) y caja de texto libre.
+   - Envía a `POST /nlp/entender-comando` portando el JWT de operador.
+   - Muestra la confirmación humana y la tarjeta técnica con la acción sugerida.
+   - **Ocultamiento Total:** No tiene acceso a KPIs, gráficos, bitácora ni controles administrativos.
+   - **🛡️ Prueba de Auditoría RBAC en Vivo:** Incluye un botón para intentar consultar `/nlp/estadisticas`, desplegando en pantalla el rechazo real con **`HTTP 403 Forbidden: Acceso denegado`** para demostrar la efectividad de la política de mínimo privilegio.
+
+3. **Vista de SUPERVISOR (`supervisor_ica`):**
+   - **Centro de Monitoreo y Analítica:** Acceso completo consumiendo `GET /nlp/estadisticas` con el token del supervisor.
+   - 4 KPIs de alto contraste: Total Mensajes, Confianza Promedio %, Tasa de Derivación % y Alertas Críticas.
+   - Gráficos de barras interactivos por Intención y Sentimiento.
+   - Ranking de Entidades y Áreas más reportadas.
+   - Bitácora dinámica de los últimos 15 eventos con auto-actualización configurable cada 5s.
+   - Pestaña de Consola de Prueba para simulación directa de mensajes.
+   - Botón en barra lateral para reiniciar estadísticas a cero (`POST /nlp/estadisticas/reiniciar`).
 
 ---
 
