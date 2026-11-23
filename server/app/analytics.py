@@ -18,15 +18,25 @@ _lock = threading.Lock()
 
 
 def _ensure_file():
-    """Asegura que el archivo de persistencia exista y tenga la estructura base."""
-    os.makedirs(os.path.dirname(os.path.abspath(STATS_FILE)), exist_ok=True)
-    if not os.path.exists(STATS_FILE) or os.path.getsize(STATS_FILE) == 0:
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
+    """
+    Asegura que el archivo de persistencia exista y tenga la estructura base.
+    Diseñado para tolerar entornos efímeros (cold starts en nubes gratuitas).
+    Si el contenedor se reinicia o el disco se borra, crea el archivo y directorios
+    padres de forma transparente sin generar excepciones.
+    """
+    target = Path(STATS_FILE).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists() or target.stat().st_size == 0:
+        with open(target, "w", encoding="utf-8") as f:
             json.dump({"registros": []}, f, indent=2, ensure_ascii=False)
 
 
 def _read_data() -> Dict[str, Any]:
-    """Lee el archivo JSON de forma segura."""
+    """
+    Lee el archivo JSON de forma segura y tolerante a fallos.
+    Si el archivo no existe, está corrupto o truncado por un apagado repentino del
+    contenedor, se repara automáticamente a una estructura limpia sin elevar error 500.
+    """
     _ensure_file()
     try:
         with open(STATS_FILE, "r", encoding="utf-8") as f:
@@ -35,20 +45,27 @@ def _read_data() -> Dict[str, Any]:
                 return {"registros": []}
             return data
     except Exception:
+        # Autoreparación del archivo si sufrió corrupción durante un cold start
+        try:
+            with open(STATS_FILE, "w", encoding="utf-8") as f:
+                json.dump({"registros": []}, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
         return {"registros": []}
 
 
 def _write_data(data: Dict[str, Any]):
-    """Escribe los datos al archivo JSON de forma atómica."""
+    """
+    Escribe los datos al archivo JSON de forma atómica.
+    Utiliza un archivo temporal intermedio para evitar que el archivo de estadísticas
+    quede corrupto a medias si el contenedor entra en modo de suspensión o inactividad.
+    """
     _ensure_file()
     temp_path = f"{STATS_FILE}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    # Reemplazo atómico en disco
-    if os.name == "nt" and os.path.exists(STATS_FILE):
-        os.replace(temp_path, STATS_FILE)
-    else:
-        os.replace(temp_path, STATS_FILE)
+    # Reemplazo atómico en disco (compatible con POSIX y Windows)
+    os.replace(temp_path, STATS_FILE)
 
 
 def registrar_evento(evento: Dict[str, Any]) -> Dict[str, Any]:

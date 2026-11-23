@@ -1,45 +1,46 @@
-# Mini-Azure LUIS 🌾
+# Mini-Azure LUIS v2 🌾
 
-Motor On-Premise de Comprensión de Lenguaje Natural (NLP) y Analítica Operativa para la Industria Agroexportadora en Red de Área Local (LAN).
+Motor Cloud/On-Premise de Comprensión de Lenguaje Natural (NLP) y Analítica Operativa para la Industria Agroexportadora con Seguridad JWT y Control de Acceso Basado en Roles (RBAC).
 
-Desarrollado para emular la funcionalidad de **Azure AI Language / LUIS** de forma 100% local, privada y desacoplada, especializado en la gestión de **uva de mesa** (Red Globe, Sweet Globe, Autumn Crisp, uva sin pepa) y **espárragos** (verde y blanco) en la región de Ica, Perú.
+Evolución de Mini-Azure LUIS hacia la nube, desarrollado para emular la funcionalidad de **Azure AI Language / LUIS** con soporte para arquitecturas públicas seguras en la nube y despliegue híbrido/local, especializado en la gestión de **uva de mesa** (Red Globe, Sweet Globe, Autumn Crisp, uva sin pepa) y **espárragos** (verde y blanco) en la región de Ica, Perú.
 
 ---
 
 ## 🏛️ Arquitectura del Sistema
 
-El proyecto está diseñado bajo una arquitectura de microservicios contenedorizados desacoplados mediante **Docker Compose**:
+El proyecto está diseñado bajo una arquitectura de microservicios desacoplados con soporte para despliegue local y en plataformas PaaS de nube gratuita:
 
 ```text
 mini-azure-luis/
 ├── .env                        # Variables de entorno locales reales (ignorado en Git)
-├── .env.example                # Plantilla documentada de variables de entorno
+├── .env.example                # Plantilla documentada de variables de entorno y seguridad
 ├── .gitignore                  # Exclusiones de Git (entorno, modelos temporales, caches)
 ├── docker-compose.yml          # Orquestación de servicios + reglas develop.watch
 ├── README.md                   # Documentación de funcionamiento y contenido del proyecto
 ├── docs/
-│   └── ficha_tecnica.md        # Entregable: Topología LAN, evidencias y cuadro comparativo
+│   ├── ficha_tecnica.md        # Entregable v1: Topología LAN, evidencias y cuadro comparativo
+│   └── persistencia_efimera.md # Resiliencia de almacenamiento en cold starts de nubes gratuitas
 ├── server/                     # [Servicio Backend] Motor NLP + API REST FastAPI (Puerto 8001)
 │   ├── Dockerfile              # Imagen Python 3.11-slim optimizada
 │   ├── requirements.txt        # Dependencias: FastAPI, Uvicorn, Scikit-Learn, Pandas, etc.
 │   ├── data/
 │   │   ├── dataset_agro.csv    # Corpus de 180 registros balanceados en español
-│   │   └── historial.json      # Almacén persistente con control de concurrencia
+│   │   └── historial.json      # Almacén persistente con control de concurrencia y autoreparación
 │   ├── models/                 # Artefactos entrenados (.joblib)
 │   └── app/
 │       ├── __init__.py
-│       ├── config.py           # Resolución híbrida de variables de entorno y rutas
+│       ├── config.py           # Resolución de variables de entorno, seguridad JWT y rutas
 │       ├── train.py            # Pipeline TF-IDF + LogisticRegression
 │       ├── nlp_engine.py       # Motor AgroNLPEngine: inferencia, entidades y fallback
-│       ├── analytics.py        # Gestor de analítica concurrente y cálculo de KPIs
+│       ├── analytics.py        # Gestor de analítica concurrente tolerante a cold starts
 │       └── main.py             # Endpoints FastAPI con ciclo de vida lifespan y CORS
-└── client/                     # [Servicio Frontend] Cliente LAN + Dashboard Streamlit (Puerto 8501)
+└── client/                     # [Servicio Frontend] Cliente Web + Dashboard Streamlit (Puerto 8501)
     ├── Dockerfile              # Imagen Python 3.11-slim con PYTHONPATH configurado
     ├── requirements.txt        # Dependencias: Streamlit, Requests, Pandas, Dotenv
     └── app/
         ├── __init__.py
-        ├── config.py           # Construcción dinámica de BASE_URL con resolución interna
-        └── dashboard.py        # Interfaz web (envío individual, lote y KPIs en vivo)
+        ├── config.py           # Resolución dinámica de URL pública Cloud y LAN
+        └── dashboard.py        # Interfaz web con vistas diferenciadas por rol
 ```
 
 ---
