@@ -15,32 +15,41 @@ mini-azure-luis/
 ├── .env                        # Variables de entorno locales reales (ignorado en Git)
 ├── .env.example                # Plantilla documentada de variables de entorno y seguridad
 ├── .gitignore                  # Exclusiones de Git (entorno, modelos temporales, caches)
-├── docker-compose.yml          # Orquestación de servicios + reglas develop.watch
+├── docker-compose.yml          # Orquestación local de microservicios con develop.watch
+├── Dockerfile                  # Empaquetado monolítico unificado para Cloud (Render Free)
+├── nginx.conf.template         # Plantilla de proxy inverso ligero con soporte WebSocket
+├── start.sh                    # Script de orquestación interna (FastAPI + Streamlit + Nginx)
+├── requirements-monolith.txt   # Dependencias consolidadas para producción
 ├── README.md                   # Documentación de funcionamiento y contenido del proyecto
 ├── docs/
 │   ├── ficha_tecnica.md        # Entregable v1: Topología LAN, evidencias y cuadro comparativo
-│   └── persistencia_efimera.md # Resiliencia de almacenamiento en cold starts de nubes gratuitas
+│   ├── persistencia_efimera.md # Resiliencia de almacenamiento en cold starts de nubes gratuitas
+│   └── arquitectura_cloud_seguridad.md # Evaluación cloud (Grok) y diseño RBAC con JWT
 ├── server/                     # [Servicio Backend] Motor NLP + API REST FastAPI (Puerto 8001)
 │   ├── Dockerfile              # Imagen Python 3.11-slim optimizada
-│   ├── requirements.txt        # Dependencias: FastAPI, Uvicorn, Scikit-Learn, Pandas, etc.
+│   ├── requirements.txt        # Dependencias: FastAPI, Uvicorn, Scikit-Learn, Pandas, PyJWT
 │   ├── data/
 │   │   ├── dataset_agro.csv    # Corpus de 180 registros balanceados en español
 │   │   └── historial.json      # Almacén persistente con control de concurrencia y autoreparación
 │   ├── models/                 # Artefactos entrenados (.joblib)
 │   └── app/
 │       ├── __init__.py
+│       ├── auth.py             # Módulo de autenticación JWT y dependencias RBAC (401/403)
 │       ├── config.py           # Resolución de variables de entorno, seguridad JWT y rutas
 │       ├── train.py            # Pipeline TF-IDF + LogisticRegression
 │       ├── nlp_engine.py       # Motor AgroNLPEngine: inferencia, entidades y fallback
 │       ├── analytics.py        # Gestor de analítica concurrente tolerante a cold starts
-│       └── main.py             # Endpoints FastAPI con ciclo de vida lifespan y CORS
-└── client/                     # [Servicio Frontend] Cliente Web + Dashboard Streamlit (Puerto 8501)
-    ├── Dockerfile              # Imagen Python 3.11-slim con PYTHONPATH configurado
-    ├── requirements.txt        # Dependencias: Streamlit, Requests, Pandas, Dotenv
-    └── app/
-        ├── __init__.py
-        ├── config.py           # Resolución dinámica de URL pública Cloud y LAN
-        └── dashboard.py        # Interfaz web con vistas diferenciadas por rol
+│       └── main.py             # Endpoints FastAPI protegidos con lifespan y CORS
+├── client/                     # [Servicio Frontend] Cliente Web + Dashboard Streamlit (Puerto 8501)
+│   ├── Dockerfile              # Imagen Python 3.11-slim con PYTHONPATH configurado
+│   ├── requirements.txt        # Dependencias: Streamlit, Requests, Pandas, Dotenv
+│   └── app/
+│       ├── __init__.py
+│       ├── config.py           # Resolución dinámica de URL pública Cloud, Monolito y LAN
+│       └── dashboard.py        # Interfaz web con Login Gate y vistas diferenciadas por rol
+└── tests/
+    ├── test_auth_rbac.py       # Pruebas unitarias y de integración de seguridad (401, 403, 200)
+    └── test_monolith.py        # Validación de enrutamiento monolítico en puerto único ($PORT)
 ```
 
 ---
@@ -152,6 +161,33 @@ docker compose up --watch
    docker compose up nlp-client -d
    ```
 3. Abrir en el navegador `http://localhost:8501` y validar que el semáforo muestre `🟢 Servidor Conectado`.
+
+---
+
+### Opción 3: Despliegue en la Nube Gratuita (Render Free - Modo Monolito)
+
+Arquitectura optimizada para **Render Free Web Service** (< 512 MB RAM) con un solo puerto público dinámico `$PORT` mediante proxy inverso Nginx:
+
+1. **Construcción y Prueba Local:**
+   ```bash
+   docker build -t mini-azure-luis-monolith .
+   docker run -d -p 10000:10000 -e PORT=10000 --env-file .env mini-azure-luis-monolith
+   python tests/test_monolith.py
+   ```
+2. **Despliegue Continuo en Render:**
+   - Crear un **Web Service** conectado al repositorio GitHub.
+   - **Environment / Runtime:** `Docker`.
+   - **Instance Type:** `Free`.
+   - **Variables de Entorno en el Dashboard de Render:**
+     - `JWT_SECRET_KEY`: Tu clave secreta criptográfica.
+     - `OPERADOR_USER`: `operador_ica`
+     - `OPERADOR_PASS`: `operador_pass_2026`
+     - `SUPERVISOR_USER`: `supervisor_ica`
+     - `SUPERVISOR_PASS`: `supervisor_pass_2026`
+     - `CONFIDENCE_THRESHOLD`: `0.65`
+   - Render construirá automáticamente la imagen desde el `Dockerfile` de la raíz y asignará una URL pública HTTPS (`https://tu-servicio.onrender.com`).
+   - Acceso web: La raíz `/` expone directamente el **Login Gate** de Streamlit.
+   - Acceso API REST: Los endpoints `/health`, `/auth/login` y `/nlp/*` están disponibles directamente bajo la misma URL pública.
 
 ---
 
