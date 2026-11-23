@@ -25,6 +25,19 @@ SUPERVISOR_PASS = os.getenv("SUPERVISOR_PASS", "supervisor_pass_2026")
 
 # URL Pública de la API
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "")
+TARGET_SERVER_IP = os.getenv("TARGET_SERVER_IP", "127.0.0.1")
+
+def get_api_base_url(custom_url_or_ip: str = None, custom_port: str = None) -> str:
+    """Fallback para resolución de URL si se importa desde el paquete backend."""
+    if custom_url_or_ip and custom_url_or_ip.strip():
+        val = custom_url_or_ip.strip()
+        if val.startswith("http://") or val.startswith("https://"):
+            return val.rstrip("/")
+        port = custom_port.strip() if custom_port and custom_port.strip() else SERVER_PORT
+        return f"http://{val}:{port}"
+    if API_PUBLIC_URL:
+        return API_PUBLIC_URL.rstrip("/")
+    return f"http://{TARGET_SERVER_IP}:{SERVER_PORT}"
 
 def resolve_path(env_var_name: str, fallback_subpath: str) -> str:
     val = os.getenv(env_var_name)

@@ -13,16 +13,16 @@ echo "⚙️ Configurando proxy inverso Nginx para puerto ${PORT}..."
 rm -f /etc/nginx/sites-enabled/default
 envsubst '$PORT' < /app/nginx.conf.template > /etc/nginx/conf.d/default.conf
 
-# 2. Iniciar FastAPI en segundo plano en 127.0.0.1:8001
+# 2. Iniciar FastAPI en segundo plano en 127.0.0.1:8001 con su propio PYTHONPATH aislado
 echo "🚀 Iniciando Backend FastAPI en 127.0.0.1:8001..."
 cd /app/server
-uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1 &
+PYTHONPATH=/app/server uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1 &
 FASTAPI_PID=$!
 
-# 3. Iniciar Streamlit en segundo plano en 127.0.0.1:8501
+# 3. Iniciar Streamlit en segundo plano en 127.0.0.1:8501 con su propio PYTHONPATH aislado
 echo "📊 Iniciando Frontend Streamlit en 127.0.0.1:8501..."
 cd /app/client
-streamlit run app/dashboard.py \
+PYTHONPATH=/app/client streamlit run app/dashboard.py \
     --server.port=8501 \
     --server.address=127.0.0.1 \
     --server.headless=true \

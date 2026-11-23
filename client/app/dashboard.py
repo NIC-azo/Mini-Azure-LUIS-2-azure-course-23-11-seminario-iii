@@ -14,10 +14,22 @@ for p in [str(PROJECT_ROOT), str(CURRENT_DIR)]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-try:
-    from app.config import TARGET_SERVER_IP, SERVER_PORT, API_PUBLIC_URL, get_api_base_url
-except ModuleNotFoundError:
-    from config import TARGET_SERVER_IP, SERVER_PORT, API_PUBLIC_URL, get_api_base_url
+# Cargar configuración del cliente de forma robusta e inmune a colisiones de sys.path
+import importlib.util
+client_cfg_file = CURRENT_DIR / "config.py"
+if client_cfg_file.exists():
+    spec = importlib.util.spec_from_file_location("client_config_module", str(client_cfg_file))
+    client_cfg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(client_cfg)
+    TARGET_SERVER_IP = getattr(client_cfg, "TARGET_SERVER_IP", "127.0.0.1")
+    SERVER_PORT = getattr(client_cfg, "SERVER_PORT", "8001")
+    API_PUBLIC_URL = getattr(client_cfg, "API_PUBLIC_URL", "")
+    get_api_base_url = getattr(client_cfg, "get_api_base_url", lambda *args, **kwargs: "http://127.0.0.1:8001")
+else:
+    try:
+        from app.config import TARGET_SERVER_IP, SERVER_PORT, API_PUBLIC_URL, get_api_base_url
+    except Exception:
+        from config import TARGET_SERVER_IP, SERVER_PORT, API_PUBLIC_URL, get_api_base_url
 
 # ====================================================================
 # Configuración de Página y Estilos Visuales

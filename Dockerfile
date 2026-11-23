@@ -4,8 +4,7 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
-    MONOLITH_MODE=true \
-    PYTHONPATH="/app/server:/app/client"
+    MONOLITH_MODE=true
 
 # Instalar Nginx ligero, gettext (para envsubst) y curl para healthchecks
 RUN apt-get update && apt-get install -y --no-install-recommends \
